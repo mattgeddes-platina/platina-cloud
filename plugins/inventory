@@ -1,0 +1,156 @@
+#!/usr/bin/env python
+# Sample Ansible inventory module for gathering inventory from the local PCC
+# instance
+
+import requests
+import urllib3  # only to ignore warnings for bad certs
+import json
+from string import join
+
+"""
+Default Ansible inventory output format:
+{
+    "_meta": {
+        "hostvars": {
+            "host001": {
+                "var001" : "value"
+            },
+            "host002": {
+                "var002": "value"
+            }
+        }
+    }
+    "all": {
+        "children": [
+            "ungrouped"
+        ]
+    },
+    "group001": {
+        "hosts": ["host001", "" "host002"],
+        "vars": {
+            "var1": true
+        },
+        "children": ["group002"]
+    },
+    "group002": {
+        "hosts": ["host003","host004"],
+        "vars": {
+            "var2": 500
+        },
+        "children":[]
+    }
+
+}
+"""
+"""
+Default host variable list format when called with --host=$HOSTNAME
+{
+    "VAR001": "VALUE",
+    "VAR002": "VALUE",
+}
+"""
+
+# inline PCC API wrapper
+class PlatinaCommandCenter:
+    """Class to wrap REST calls to PCC"""
+    def __init__( self, host, user, password, proxies=None ):
+	self.protocol="https"
+        self.instance ="%s:9999" % host
+	self.username = user
+	self.password = password
+	self.headers = { "Content-type": "application/json", "Authorization": "" }
+        self.proxies = proxies
+
+	# Returned authentication token
+	self.authenticate()
+
+    def url_from_endpoint( self, endpoint ):
+	u = "%s://%s%s" % ( self.protocol, self.instance, endpoint )
+        return u
+
+    def authenticate( self ):
+	url = "%s" % self.url_from_endpoint( "/security/auth" )
+	payload = { 'username': self.username, 'password': self.password }
+	r = requests.post( url, data=json.dumps( payload ), headers=self.headers, verify=False, proxies=self.proxies )
+	r.raise_for_status() # Fail with details if not HTTP 200
+	response = r.json()
+	# Retrieve authentication token for subsequent calls
+	self.headers[ "Authorization" ] = "Bearer %s" % response[ "token" ]
+
+    def get_nodes( self ):
+	r = requests.get( "%s" % self.url_from_endpoint( "/pccserver/node" ), headers=self.headers, verify=False, proxies=self.proxies )
+	r.raise_for_status()
+	return r.json()
+
+    def get_sites( self ):
+	r = requests.get( "%s" % self.url_from_endpoint( "/pccserver/site" ), headers=self.headers, verify=False, proxies=self.proxies )
+	r.raise_for_status()
+	return r.json()
+
+    def get_clusters( self ):
+	r = requests.get( "%s" % self.url_from_endpoint( "/pccserver/cluster" ), headers=self.headers, verify=False, proxies=self.proxies )
+	r.raise_for_status()
+	return r.json()
+
+config = {}
+with open( "./pcc-inventory.json", "r" ) as f:
+    config = json.load( f )
+
+proxies = None
+if "proxy" in config and config[ "proxy" ] != "":
+    proxies = {
+            "http": config[ "proxy" ],
+            "https": config[ "proxy" ]
+            }
+
+# Create a new authenticated session to the PCC instance
+p = PlatinaCommandCenter( config[ 'pcc_host' ], config[ 'pcc_user' ], config[ 'pcc_pass' ], proxies = proxies )
+s = p.get_sites()
+c = p.get_clusters()
+n = p.get_nodes()
+
+sites = {}
+for site in s[ "Data" ]:
+    sites[ str( site[ "Id" ] ) ] = site[ "Name" ]
+clusters = {}
+for cluster in c[ "Data" ]:
+    clusters[ str( cluster[ "Id" ] ) ] = cluster[ "Name" ]
+
+#print( clusters )
+#print( sites )
+
+node_ids = []
+output = {}
+output[ "_meta" ] = {}
+output[ "_meta" ][ "hostvars" ] = {}
+output[ "all" ] = {}
+output[ "all" ][ "hosts" ] = []
+for node in n[ "Data" ]:
+    if node[ "managed" ]:
+        # We filter out any nodes not managed by PCC
+        #print( json.dumps( node, indent=4, sort_keys=True ) )
+        output[ "_meta" ][ "hostvars" ][ node[ "Host" ] ] = {}
+        if "ansible_vars" in config:
+            for k in config[ "ansible_vars" ].keys():
+                output[ "_meta" ][ "hostvars" ][ node[ "Host" ] ][ k ] = config[ "ansible_vars" ][ k ]
+        output[ "_meta" ][ "hostvars" ][ node[ "Host" ] ][ "pcc_name" ] = node[ "Name" ]
+        if "tags" in node:
+            output[ "_meta" ][ "hostvars" ][ node[ "Host" ] ][ "tags" ] = node[ "tags" ]
+        output[ "all" ][ "hosts" ].append( node[ "Host" ] )
+        if "ClusterId" in node and node[ "ClusterId" ]:
+            # add this node to this site.
+            cluster = clusters[ str( node[ "ClusterId" ] ) ]
+            if not cluster in output:
+                output[ cluster ] = {}
+                output[ cluster ][ "hosts" ] = []
+            output[ cluster ][ "hosts" ].append( node[ "Host" ] )
+        if "Site_Id" in node and node[ "Site_Id" ]:
+            # add this node to this site.
+            site = sites[ str( node[ "Site_Id" ] ) ]
+            if not site in output:
+                output[ site ] = {}
+                output[ site ][ "hosts" ] = []
+            output[ site ][ "hosts" ].append( node[ "Host" ] )
+
+print( json.dumps( output, indent=4 ) )
+

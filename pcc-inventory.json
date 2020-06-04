@@ -1,0 +1,6 @@
+{
+    "pcc_host": "192.0.2.1",
+    "pcc_user": "admin",
+    "pcc_pass": "secretpassword"
+}
+

@@ -1,0 +1,16 @@
+namespace: mattgeddes_platina
+name: platina_cloud
+version: 1.0.0
+readme: README.md
+authors:
+- Matthew Geddes <mgeddes@platinasystems.com>
+description: An Ansible collection for leveraging Platina Command Center for inventory
+license:
+- GPL-2.0-only
+license_file: ''
+tags: ["platina", "pcc", "platina_command_center", "platinasystems"]
+dependencies: {}
+repository: https://github.com/mattgeddes-platina/platina_cloud
+documentation: https://github.com/mattgeddes-platina/platina_cloud
+homepage: 
+issues: https://github.com/mattgeddes-platina/platina_cloud

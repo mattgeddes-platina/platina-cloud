@@ -1,0 +1,10 @@
+{
+    "pcc_host": "192.0.2.0",
+    "pcc_user": "ansible",
+    "pcc_pass": "secretpass",
+    "proxy": "socks5://localhost:3128",
+    "ansible_vars": {
+	"ansible_ssh_common_args": "-o 'ProxyJump 192.0.2.254:3028'"
+    }
+}
+
